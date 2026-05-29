@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"net/http"
 	"os"
 	"os/signal"
@@ -185,6 +186,7 @@ func (a *App) refreshForRange(ctx context.Context, mode string, from, to time.Ti
 	errs = append(errs, dailyErrs...)
 	rankings := scoring.Rank(all, daily, scoringConfig(a.cfg), to)
 	a.addChartURLs(rankings, to)
+	a.addMiniCharts(rankings, all, daily, to)
 	status := "ready"
 	if len(errs) > 0 {
 		status = fmt.Sprintf("ready with %d data errors", len(errs))
@@ -378,6 +380,7 @@ func (a *App) refreshHistorical(ctx context.Context, from, end, asOf time.Time) 
 	errs = append(errs, dailyErrs...)
 	rankings := scoring.Rank(all, daily, scoringConfig(a.cfg), asOf)
 	a.addChartURLs(rankings, asOf)
+	a.addMiniCharts(rankings, all, daily, asOf)
 	status := "ready"
 	if len(errs) > 0 {
 		status = fmt.Sprintf("ready with %d data errors", len(errs))
@@ -487,6 +490,58 @@ func (a *App) addChartURLs(rankings []scoring.Result, fallback time.Time) {
 	}
 }
 
+func (a *App) addMiniCharts(rankings []scoring.Result, all, daily map[string][]bars.Bar, asOf time.Time) {
+	for i := range rankings {
+		rankings[i].MiniChart = a.miniChart(rankings[i].Symbol, all[rankings[i].Symbol], daily[rankings[i].Symbol], asOf)
+	}
+}
+
+func (a *App) miniChart(symbol string, series, daily []bars.Bar, asOf time.Time) scoring.MiniChart {
+	local := asOf.In(a.tz)
+	day := time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, a.tz)
+	start := combineDayTime(day, "09:30", a.tz)
+	end := combineDayTime(day, "16:00", a.tz)
+	chart := scoring.MiniChart{
+		PriorClose:   roundFloat(priorClose(daily), 4),
+		SessionStart: start,
+		SessionEnd:   end,
+		Points:       []scoring.ChartPoint{},
+	}
+
+	sort.Slice(series, func(i, j int) bool { return series[i].End.Before(series[j].End) })
+	var pv, vol float64
+	for _, bar := range series {
+		localEnd := bar.End.In(a.tz)
+		if localEnd.Before(start) || localEnd.After(end) || localEnd.After(asOf.In(a.tz)) {
+			continue
+		}
+		price := bar.VWAP
+		if price <= 0 {
+			price = bar.TypicalPrice()
+		}
+		pv += price * bar.Volume
+		vol += bar.Volume
+		vwap := bar.Close
+		if vol > 0 {
+			vwap = pv / vol
+		}
+		chart.Points = append(chart.Points, scoring.ChartPoint{
+			Time:  bar.End,
+			Price: roundFloat(bar.Close, 4),
+			VWAP:  roundFloat(vwap, 4),
+		})
+	}
+	return chart
+}
+
+func priorClose(daily []bars.Bar) float64 {
+	if len(daily) == 0 {
+		return 0
+	}
+	sort.Slice(daily, func(i, j int) bool { return daily[i].End.Before(daily[j].End) })
+	return daily[len(daily)-1].Close
+}
+
 func (a *App) chartURL(result scoring.Result, t time.Time) string {
 	base := strings.TrimRight(a.cfg.UI.ChartOpenerBaseURL, "/")
 	if base == "" {
@@ -505,6 +560,11 @@ func (a *App) chartURL(result scoring.Result, t time.Time) string {
 		local.Format("1504"),
 		signal,
 	)
+}
+
+func roundFloat(v float64, places int) float64 {
+	pow := math.Pow10(places)
+	return math.Round(v*pow) / pow
 }
 
 func (a *App) snapshot() Snapshot {

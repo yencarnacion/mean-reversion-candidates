@@ -39,6 +39,20 @@ type Result struct {
 	Reason           string     `json:"reason"`
 	Components       Components `json:"components"`
 	ChartURL         string     `json:"chart_url"`
+	MiniChart        MiniChart  `json:"mini_chart"`
+}
+
+type MiniChart struct {
+	PriorClose   float64      `json:"prior_close"`
+	SessionStart time.Time    `json:"session_start"`
+	SessionEnd   time.Time    `json:"session_end"`
+	Points       []ChartPoint `json:"points"`
+}
+
+type ChartPoint struct {
+	Time  time.Time `json:"time"`
+	Price float64   `json:"price"`
+	VWAP  float64   `json:"vwap"`
 }
 
 type Components struct {

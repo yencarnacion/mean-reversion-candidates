@@ -239,11 +239,19 @@ td:nth-child(3) {
 }
 
 tbody .stock-main-row:hover,
-tbody .stock-main-row:hover + .stock-why-row {
+tbody .stock-main-row:hover + .stock-chart-row,
+tbody .stock-main-row:hover + .stock-chart-row + .stock-why-row {
   background: #f3f7f6;
 }
 
 .stock-main-row td {
+  border-bottom: 0;
+}
+
+.stock-chart-row td {
+  padding-top: 0;
+  padding-bottom: 4px;
+  text-align: left;
   border-bottom: 0;
 }
 
@@ -274,6 +282,117 @@ tbody .stock-main-row:hover + .stock-why-row {
 .why-components {
   color: #7a8794;
   font-size: 12px;
+}
+
+.mini-chart {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 90px;
+}
+
+.mini-chart.empty-chart {
+  color: var(--muted);
+  min-height: 34px;
+}
+
+.mini-chart svg {
+  flex: 0 0 auto;
+}
+
+.chart-bg {
+  fill: #fbfcfd;
+  stroke: #d8e0e7;
+}
+
+.axis-line {
+  stroke: #d5dde5;
+  stroke-width: 1;
+}
+
+.prev-day-band {
+  fill: #f0f3f6;
+  stroke: #dde4eb;
+}
+
+.open-line {
+  stroke: #aab6c1;
+  stroke-dasharray: 2 3;
+  stroke-width: 1;
+}
+
+.price-line {
+  fill: none;
+  stroke: #1f5f99;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+}
+
+.vwap-line {
+  fill: none;
+  stroke: #b05f12;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.6;
+}
+
+.prev-close-line {
+  stroke: #778491;
+  stroke-dasharray: 4 4;
+  stroke-width: 1;
+}
+
+.prev-day-line {
+  fill: none;
+  stroke: #344252;
+  stroke-linecap: round;
+  stroke-width: 2.2;
+}
+
+.gap-line {
+  stroke-width: 2.2;
+  stroke-linecap: round;
+}
+
+.chart-label,
+.chart-time {
+  fill: #677584;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.mini-chart-legend {
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.mini-chart-legend span {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.mini-chart-legend i {
+  display: inline-block;
+  width: 20px;
+  height: 0;
+  border-top: 2px solid;
+}
+
+.legend-price {
+  border-color: #1f5f99;
+}
+
+.legend-vwap {
+  border-color: #b05f12;
+}
+
+.legend-prev {
+  border-color: #778491;
+  border-top-style: dashed !important;
 }
 
 .score {

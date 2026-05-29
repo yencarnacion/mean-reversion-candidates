@@ -140,6 +140,9 @@ function renderRows(rows) {
         <td>${Number(r.range_position_pct || 0).toFixed(1)}%</td>
         <td>${fmtMoney(r.dollar_volume || 0)}</td>
       </tr>
+      <tr class="stock-chart-row">
+        <td colspan="14">${renderMiniChart(r)}</td>
+      </tr>
       <tr class="stock-why-row">
         <td colspan="14">
           <div class="why-line">
@@ -162,6 +165,78 @@ function componentTitle(c = {}) {
     `Reversal ${c.reversal_evidence || 0}`,
     `Penalty -${c.trend_penalty || 0}`,
   ].join(" | ");
+}
+
+function renderMiniChart(row) {
+  const chart = row.mini_chart || {};
+  const points = Array.isArray(chart.points) ? chart.points : [];
+  const width = 430;
+  const height = 86;
+  const pad = { left: 12, right: 10, top: 10, bottom: 18 };
+  const prevW = 78;
+  const gapW = 24;
+  const sessionX0 = pad.left + prevW + gapW;
+  const start = new Date(chart.session_start || 0).getTime();
+  const end = new Date(chart.session_end || 0).getTime();
+  const priorClose = Number(chart.prior_close || 0);
+  const values = [];
+  if (priorClose > 0) values.push(priorClose);
+  points.forEach((p) => {
+    if (Number(p.price) > 0) values.push(Number(p.price));
+    if (Number(p.vwap) > 0) values.push(Number(p.vwap));
+  });
+  if (!values.length || !Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
+    return `<div class="mini-chart empty-chart">No regular-session chart data</div>`;
+  }
+
+  let min = Math.min(...values);
+  let max = Math.max(...values);
+  const spread = Math.max(max - min, max * 0.002, 0.01);
+  min -= spread * 0.12;
+  max += spread * 0.12;
+  const innerW = width - sessionX0 - pad.right;
+  const innerH = height - pad.top - pad.bottom;
+  const x = (time) => sessionX0 + ((new Date(time).getTime() - start) / (end - start)) * innerW;
+  const y = (value) => pad.top + (1 - ((value - min) / (max - min))) * innerH;
+  const path = (key) => points
+    .filter((p) => Number(p[key]) > 0)
+    .map((p, i) => `${i === 0 ? "M" : "L"}${x(p.time).toFixed(1)} ${y(Number(p[key])).toFixed(1)}`)
+    .join(" ");
+
+  const pricePath = path("price");
+  const vwapPath = path("vwap");
+  const priorY = y(priorClose);
+  const first = points.find((p) => Number(p.price) > 0);
+  const gapColor = first && Number(first.price) >= priorClose ? "#14724f" : "#a33d3d";
+  const gap = first && priorClose > 0
+    ? `<line x1="${(sessionX0 - gapW).toFixed(1)}" y1="${priorY.toFixed(1)}" x2="${sessionX0.toFixed(1)}" y2="${y(Number(first.price)).toFixed(1)}" class="gap-line" stroke="${gapColor}"/>`
+    : "";
+  const prevStub = priorClose > 0
+    ? `<path d="M${pad.left} ${priorY.toFixed(1)} L${(sessionX0 - gapW).toFixed(1)} ${priorY.toFixed(1)}" class="prev-day-line"></path>`
+    : "";
+
+  return `
+    <div class="mini-chart">
+      <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="${row.symbol} regular-session mini chart">
+        <rect x="0" y="0" width="${width}" height="${height}" rx="4" class="chart-bg"></rect>
+        <rect x="${pad.left}" y="${pad.top}" width="${prevW}" height="${innerH}" class="prev-day-band"></rect>
+        <line x1="${sessionX0}" y1="${pad.top}" x2="${sessionX0}" y2="${height - pad.bottom}" class="open-line"></line>
+        <line x1="${pad.left}" y1="${height - pad.bottom}" x2="${width - pad.right}" y2="${height - pad.bottom}" class="axis-line"></line>
+        ${priorClose > 0 ? `<line x1="${pad.left}" y1="${priorY.toFixed(1)}" x2="${width - pad.right}" y2="${priorY.toFixed(1)}" class="prev-close-line"></line>` : ""}
+        ${prevStub}
+        ${gap}
+        ${vwapPath ? `<path d="${vwapPath}" class="vwap-line"></path>` : ""}
+        ${pricePath ? `<path d="${pricePath}" class="price-line"></path>` : ""}
+        <text x="${pad.left + 5}" y="${height - 5}" class="chart-time">Prev close</text>
+        <text x="${sessionX0 - 9}" y="${height - 5}" class="chart-time">09:30</text>
+        <text x="${width - 42}" y="${height - 5}" class="chart-time">16:00</text>
+      </svg>
+      <div class="mini-chart-legend">
+        <span><i class="legend-price"></i>Price</span>
+        <span><i class="legend-vwap"></i>VWAP</span>
+        <span><i class="legend-prev"></i>Prior close</span>
+      </div>
+    </div>`;
 }
 
 function setMode(mode) {
