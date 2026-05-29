@@ -46,6 +46,26 @@ function signed(value, suffix = "") {
   return `${prefix}${value.toFixed(2)}${suffix}`;
 }
 
+function priorCloseChangePct(row) {
+  const price = Number(row.price);
+  const priorClose = Number(row.mini_chart?.prior_close);
+  if (!Number.isFinite(price) || !Number.isFinite(priorClose) || priorClose <= 0) return NaN;
+  return ((price - priorClose) / priorClose) * 100;
+}
+
+function renderPrice(row) {
+  const price = Number(row.price || 0).toFixed(2);
+  const changePct = priorCloseChangePct(row);
+  const direction = changePct > 0 ? "up" : changePct < 0 ? "down" : "flat";
+  const label = Number.isFinite(changePct) ? signed(changePct, "%") : "-";
+  const title = Number.isFinite(changePct) ? "Change from prior close" : "Prior close unavailable";
+  return `
+    <span class="price-cell">
+      <span class="last-price">${price}</span>
+      <span class="price-change ${direction}" title="${title}">${label}</span>
+    </span>`;
+}
+
 async function loadConfig() {
   const res = await fetch("/api/config");
   const data = await res.json();
@@ -129,7 +149,7 @@ function renderRows(rows) {
         <td><a href="${r.chart_url || "#"}" target="_blank" rel="noreferrer">${r.symbol}</a></td>
         <td class="${sideClass}">${r.side}</td>
         <td><span class="score"><span class="grade ${gradeClass}">${r.grade}</span><strong>${Number(r.score || 0).toFixed(1)}</strong></span></td>
-        <td>${Number(r.price || 0).toFixed(2)}</td>
+        <td>${renderPrice(r)}</td>
         <td>${Number(r.vwap || 0).toFixed(2)}</td>
         <td class="${r.move_from_vwap_pct < 0 ? "negative" : "positive"}">${signed(r.move_from_vwap_pct, "%")}</td>
         <td class="${r.day_move_atr < 0 ? "negative" : "positive"}">${signed(r.day_move_atr, "x")}</td>

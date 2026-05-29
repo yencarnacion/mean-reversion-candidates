@@ -7,10 +7,13 @@
   --line: #dde3ea;
   --accent: #166a5b;
   --accent-2: #9a4d1e;
-  --danger: #a33d3d;
-  --good: #14724f;
+  --danger: #b24745;
+  --good: #177245;
+  --loss-bg: #fbe9e8;
+  --gain-bg: #e6f4ee;
+  --flat-bg: #eef2f5;
   --warn: #8a6417;
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: "Atkinson Hyperlegible", Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
 * {
@@ -211,6 +214,7 @@ table {
   width: 100%;
   border-collapse: collapse;
   min-width: 1280px;
+  font-variant-numeric: tabular-nums;
 }
 
 th,
@@ -400,6 +404,45 @@ tbody .stock-main-row:hover + .stock-chart-row + .stock-why-row {
   grid-template-columns: 28px 48px;
   gap: 8px;
   align-items: center;
+}
+
+.price-cell {
+  display: inline-flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 7px;
+  min-width: 104px;
+  font-variant-numeric: tabular-nums;
+}
+
+.last-price {
+  color: var(--text);
+  font-weight: 720;
+}
+
+.price-change {
+  min-width: 56px;
+  border-radius: 4px;
+  padding: 2px 6px;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.price-change.up {
+  background: var(--gain-bg);
+  color: var(--good);
+}
+
+.price-change.down {
+  background: var(--loss-bg);
+  color: var(--danger);
+}
+
+.price-change.flat {
+  background: var(--flat-bg);
+  color: var(--muted);
 }
 
 .grade {
