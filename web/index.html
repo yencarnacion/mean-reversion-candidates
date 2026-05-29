@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mean Reversion Candidates</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <h1>Mean Reversion Candidates</h1>
+      <p id="status">Starting</p>
+    </div>
+    <div class="mode">
+      <button id="liveBtn" class="active" type="button">Live</button>
+      <button id="histBtn" type="button">Historical</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="controls">
+      <div class="data-clock">
+        <span>Data clock</span>
+        <strong id="dataClock">-</strong>
+        <em id="dataClockMode">-</em>
+      </div>
+      <div class="metric">
+        <span>Symbols</span>
+        <strong id="symbolCount">0</strong>
+      </div>
+      <div class="metric">
+        <span>As of</span>
+        <strong id="asOf">-</strong>
+      </div>
+      <div class="metric">
+        <span>Updated</span>
+        <strong id="updatedAt">-</strong>
+      </div>
+      <div id="livePlayback" class="live-playback">
+        <button id="back1Btn" type="button">Back 1</button>
+        <button id="pauseLiveBtn" type="button">Pause</button>
+        <button id="forward1Btn" type="button">Forward 1</button>
+        <button id="latestBtn" type="button">Live/Latest</button>
+      </div>
+      <button id="refreshBtn" type="button">Refresh</button>
+    </section>
+
+    <section id="historicalPanel" class="historical hidden">
+      <label>
+        Date
+        <input id="histDate" type="date">
+      </label>
+      <label>
+        Time
+        <input id="histTime" type="time" min="04:00" max="20:00" step="60">
+      </label>
+      <input id="timeSlider" type="range" min="240" max="1200" step="1" value="1200">
+      <button id="playBtn" type="button">Play</button>
+      <button id="stopBtn" type="button">Stop</button>
+    </section>
+
+    <section class="formula">
+      <h2>Ranking Formula</h2>
+      <p id="formulaSummary"></p>
+      <div id="formulaGrid" class="formula-grid"></div>
+    </section>
+
+    <section class="table-shell">
+      <table>
+        <thead>
+          <tr>
+            <th>Rank</th>
+            <th>Symbol</th>
+            <th>Side</th>
+            <th>Score</th>
+            <th>Price</th>
+            <th>VWAP</th>
+            <th>VWAP %</th>
+            <th>Day ATR</th>
+            <th>VWAP ATR</th>
+            <th>ATR %</th>
+            <th>30m %</th>
+            <th>Z</th>
+            <th>Range</th>
+            <th>Dollar Vol</th>
+          </tr>
+        </thead>
+        <tbody id="rankings"></tbody>
+      </table>
+    </section>
+  </main>
+
+  <script src="/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,32 @@
+server_port: 8089
+timezone: "America/New_York"
+input_csv: "top-100.csv"
+
+massive:
+  cache_dir: "cache"
+  max_parallel_requests: 6
+
+live:
+  enabled: true
+  refresh_seconds: 60
+  start_time: "04:00"
+  end_time: "20:00"
+
+historical:
+  start_time: "04:00"
+  end_time: "20:00"
+  replay_step_seconds: 60
+
+scoring:
+  lookback_minutes: 30
+  range_lookback_minutes: 60
+  atr_period: 14
+  min_dollar_volume: 10000000
+  excellent_score: 75
+  good_score: 60
+
+ui:
+  chart_opener_base_url: "http://localhost:8081"
+
+logging:
+  level: "info"
