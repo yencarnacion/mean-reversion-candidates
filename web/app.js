@@ -298,6 +298,13 @@ function ensureLiveCursor() {
   }
 }
 
+function currentLiveCursor() {
+  const now = new Date();
+  if (!state.lastLiveAsOf) return now;
+  const lastLiveAsOf = new Date(state.lastLiveAsOf);
+  return lastLiveAsOf > now ? lastLiveAsOf : now;
+}
+
 function setLivePinned(value) {
   state.livePinned = value;
   if (value) ensureLiveCursor();
@@ -317,7 +324,9 @@ function stepLive(minutes) {
 }
 
 function pauseLive() {
-  ensureLiveCursor();
+  if (!state.livePinned) {
+    state.liveCursor = currentLiveCursor();
+  }
   setLivePinned(true);
   loadRankings().catch(showError);
 }
