@@ -299,10 +299,7 @@ function ensureLiveCursor() {
 }
 
 function currentLiveCursor() {
-  const now = new Date();
-  if (!state.lastLiveAsOf) return now;
-  const lastLiveAsOf = new Date(state.lastLiveAsOf);
-  return lastLiveAsOf > now ? lastLiveAsOf : now;
+  return state.lastLiveAsOf ? new Date(state.lastLiveAsOf) : new Date();
 }
 
 function setLivePinned(value) {
@@ -326,9 +323,11 @@ function stepLive(minutes) {
 function pauseLive() {
   if (!state.livePinned) {
     state.liveCursor = currentLiveCursor();
+    state.livePinned = true;
+    updateLiveControls();
+    $("dataClockMode").textContent = dataClockModeLabel("live paused");
+    $("status").textContent = $("status").textContent.replace(/^live - /, "live paused - ");
   }
-  setLivePinned(true);
-  loadRankings().catch(showError);
 }
 
 function goLiveLatest() {
