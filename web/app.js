@@ -1,11 +1,15 @@
 const state = {
   mode: "live",
   timer: null,
+  loadingRankings: false,
+  refreshMs: 60_000,
   playing: false,
   playTimer: null,
   livePinned: false,
   liveCursor: null,
   lastLiveAsOf: null,
+  lastRows: [],
+  fadesFirst: false,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -40,6 +44,14 @@ function fmtMoney(value) {
   return `$${value.toFixed(0)}`;
 }
 
+function fmtVolume(value) {
+  if (!Number.isFinite(value)) return "-";
+  if (value >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(1)}B`;
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
+  if (value >= 1_000) return `${(value / 1_000).toFixed(1)}K`;
+  return value.toFixed(0);
+}
+
 function signed(value, suffix = "") {
   if (!Number.isFinite(value)) return "-";
   const prefix = value > 0 ? "+" : "";
@@ -67,10 +79,14 @@ function renderPrice(row) {
 }
 
 async function loadConfig() {
-  const res = await fetch("/api/config");
+  const res = await fetch("/api/config", { cache: "no-store" });
   const data = await res.json();
   renderFormula(data.formula);
   $("symbolCount").textContent = data.symbols.length;
+  const seconds = Number(data.config?.live?.refresh_seconds);
+  if (Number.isFinite(seconds) && seconds > 0) {
+    state.refreshMs = seconds * 1000;
+  }
 
   const now = new Date();
   $("histDate").value = now.toISOString().slice(0, 10);
@@ -85,15 +101,22 @@ function renderFormula(formula) {
 }
 
 async function loadRankings() {
+  if (state.loadingRankings) return;
+  state.loadingRankings = true;
   const pinnedLive = state.mode === "live" && state.livePinned;
   const url = state.mode === "historical" ? historicalUrl() : pinnedLive ? liveCursorUrl() : "/api/rankings";
-  const res = await fetch(url);
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || "request failed");
-  if (pinnedLive) {
-    data.mode = "live paused";
+  try {
+    const res = await fetch(url, { cache: "no-store" });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "request failed");
+    if (pinnedLive) {
+      data.mode = "live paused";
+    }
+    renderSnapshot(data);
+  } finally {
+    state.loadingRankings = false;
+    scheduleLiveRefresh();
   }
-  renderSnapshot(data);
 }
 
 function historicalUrl() {
@@ -129,7 +152,8 @@ function renderSnapshot(data) {
   }
   updateLiveControls();
   if (data.formula) renderFormula(data.formula);
-  renderRows(data.rankings || []);
+  state.lastRows = data.rankings || [];
+  renderRows(state.lastRows);
 }
 
 function dataClockModeLabel(apiMode) {
@@ -140,43 +164,100 @@ function dataClockModeLabel(apiMode) {
 }
 
 function renderRows(rows) {
-  $("rankings").innerHTML = rows.map((r) => {
+  $("rankings").innerHTML = orderedRows(rows).map((r) => {
     const gradeClass = (r.grade || "").toLowerCase();
     const sideClass = r.side === "Long bounce" ? "side-long" : r.side === "Short fade" ? "side-short" : "";
+    const cardSideClass = r.side === "Long bounce" ? "card-long" : r.side === "Short fade" ? "card-short" : "";
     return `
-      <tr class="stock-main-row">
-        <td>${r.rank || "-"}</td>
-        <td><a href="${r.chart_url || "#"}" target="_blank" rel="noreferrer">${r.symbol}</a></td>
-        <td class="${sideClass}">${r.side}</td>
-        <td><span class="score"><span class="grade ${gradeClass}">${r.grade}</span><strong>${Number(r.score || 0).toFixed(1)}</strong></span></td>
-        <td>${renderPrice(r)}</td>
-        <td>${Number(r.vwap || 0).toFixed(2)}</td>
-        <td class="${r.move_from_vwap_pct < 0 ? "negative" : "positive"}">${signed(r.move_from_vwap_pct, "%")}</td>
-        <td class="${r.day_move_atr < 0 ? "negative" : "positive"}">${signed(r.day_move_atr, "x")}</td>
-        <td class="${r.vwap_stretch_atr < 0 ? "negative" : "positive"}">${signed(r.vwap_stretch_atr, "x")}</td>
-        <td>${Number(r.atr_percent || 0).toFixed(2)}%</td>
-        <td class="${r.return_30m_pct < 0 ? "negative" : "positive"}">${signed(r.return_30m_pct, "%")}</td>
-        <td>${Number(r.z_score_30m || 0).toFixed(2)}</td>
-        <td>${Number(r.range_position_pct || 0).toFixed(1)}%</td>
-        <td>${fmtMoney(r.dollar_volume || 0)}</td>
-      </tr>
-      <tr class="stock-chart-row">
-        <td colspan="14">${renderMiniChart(r)}</td>
-      </tr>
-      <tr class="stock-why-row">
-        <td colspan="14">
-          <div class="why-line">
-            <span class="why-label">Why</span>
-            <span>${r.reason || ""}</span>
-            <span class="why-components">${componentTitle(r.components)}</span>
+      <article class="candidate-card ${cardSideClass}">
+        <div class="candidate-top">
+          <div class="candidate-stat rank-stat">
+            <span>Rank</span>
+            <strong>${r.display_rank || "-"}</strong>
           </div>
-        </td>
-      </tr>`;
+          <div class="candidate-stat symbol-stat">
+            <span>Symbol</span>
+            <strong><a href="${r.chart_url || "#"}" target="_blank" rel="noreferrer">${r.symbol}</a></strong>
+          </div>
+          <div class="candidate-stat side-stat">
+            <span>Side</span>
+            <strong class="${sideClass}">${r.side}</strong>
+          </div>
+          <div class="candidate-stat score-stat">
+            <span>Score</span>
+            <strong><span class="grade ${gradeClass}">${r.grade}</span>${Number(r.score || 0).toFixed(1)}</strong>
+          </div>
+          <div class="candidate-stat price-stat">
+            <span>Price</span>
+            <strong>${renderPrice(r)}</strong>
+          </div>
+          <div class="candidate-stat volume-stat">
+            <span>Dollar / Volume</span>
+            <strong>${fmtMoney(r.dollar_volume || 0)} <em>${fmtVolume(r.session_volume || 0)}</em></strong>
+          </div>
+        </div>
+        <div class="chart-wrap" tabindex="0" aria-label="${r.symbol} diagnostics">
+          ${renderMiniChart(r)}
+          ${renderMetricPopover(r)}
+        </div>
+        <div class="candidate-reason">
+          <span>${r.reason || ""}</span>
+          <em>${componentTitle(r.components)}</em>
+        </div>
+      </article>`;
   }).join("");
+}
+
+function orderedRows(rows) {
+  const ranked = rowsWithSideRanks(rows);
+  const sideBucket = (row) => {
+    if (row.side === "Long bounce") return state.fadesFirst ? 2 : 0;
+    if (row.side === "Short fade") return state.fadesFirst ? 0 : 2;
+    return 1;
+  };
+  return ranked.sort((a, b) => {
+    const sideDiff = sideBucket(a) - sideBucket(b);
+    if (sideDiff !== 0) return sideDiff;
+    return (a.display_rank || 9999) - (b.display_rank || 9999);
+  });
+}
+
+function rowsWithSideRanks(rows) {
+  const ranked = rows.map((row) => ({ ...row, display_rank: row.rank }));
+  ["Long bounce", "Short fade"].forEach((side) => {
+    ranked
+      .filter((row) => row.side === side)
+      .sort(compareCandidateScore)
+      .forEach((row, index) => {
+        row.display_rank = index + 1;
+      });
+  });
+  return ranked;
+}
+
+function compareCandidateScore(a, b) {
+  const scoreDiff = Number(b.score || 0) - Number(a.score || 0);
+  if (scoreDiff !== 0) return scoreDiff;
+  return String(a.symbol || "").localeCompare(String(b.symbol || ""));
+}
+
+function renderMetricPopover(r) {
+  return `
+    <div class="metric-popover" role="tooltip">
+      <div><span>VWAP</span><strong>${Number(r.vwap || 0).toFixed(2)}</strong></div>
+      <div><span>VWAP %</span><strong class="${r.move_from_vwap_pct < 0 ? "negative" : "positive"}">${signed(r.move_from_vwap_pct, "%")}</strong></div>
+      <div><span>Day ATR</span><strong class="${r.day_move_atr < 0 ? "negative" : "positive"}">${signed(r.day_move_atr, "x")}</strong></div>
+      <div><span>VWAP ATR</span><strong class="${r.vwap_stretch_atr < 0 ? "negative" : "positive"}">${signed(r.vwap_stretch_atr, "x")}</strong></div>
+      <div><span>ATR %</span><strong>${Number(r.atr_percent || 0).toFixed(2)}%</strong></div>
+      <div><span>30m %</span><strong class="${r.return_30m_pct < 0 ? "negative" : "positive"}">${signed(r.return_30m_pct, "%")}</strong></div>
+      <div><span>Z</span><strong>${Number(r.z_score_30m || 0).toFixed(2)}</strong></div>
+      <div><span>Range</span><strong>${Number(r.range_position_pct || 0).toFixed(1)}%</strong></div>
+    </div>`;
 }
 
 function componentTitle(c = {}) {
   return [
+    `Pivot ${c.pivot_extension || 0}`,
     `VWAP ${c.vwap_extreme || 0}`,
     `30m ${c.statistical_move || 0}`,
     `ATR ${c.daily_atr_move || 0}`,
@@ -269,6 +350,15 @@ function setMode(mode) {
   loadRankings().catch(showError);
 }
 
+function scheduleLiveRefresh() {
+  clearTimeout(state.timer);
+  state.timer = null;
+  if (state.mode !== "live" || state.livePinned) return;
+  state.timer = setTimeout(() => {
+    loadRankings().catch(showError);
+  }, state.refreshMs);
+}
+
 function dateTimeParts(date) {
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: "America/New_York",
@@ -306,6 +396,7 @@ function setLivePinned(value) {
   state.livePinned = value;
   if (value) ensureLiveCursor();
   updateLiveControls();
+  scheduleLiveRefresh();
 }
 
 function stepLive(minutes) {
@@ -384,10 +475,11 @@ async function refreshNow() {
       await loadRankings();
       return;
     }
-    const res = await fetch("/api/refresh", { method: "POST" });
+    const res = await fetch("/api/refresh", { method: "POST", cache: "no-store" });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "refresh failed");
     renderSnapshot(data);
+    scheduleLiveRefresh();
     return;
   }
   await loadRankings();
@@ -400,6 +492,10 @@ $("back1Btn").addEventListener("click", () => stepLive(-1));
 $("pauseLiveBtn").addEventListener("click", pauseLive);
 $("forward1Btn").addEventListener("click", () => stepLive(1));
 $("latestBtn").addEventListener("click", goLiveLatest);
+$("invertOrderToggle").addEventListener("change", (event) => {
+  state.fadesFirst = event.target.checked;
+  renderRows(state.lastRows || []);
+});
 $("histDate").addEventListener("change", () => loadRankings().catch(showError));
 $("histTime").addEventListener("change", () => {
   $("timeSlider").value = String(timeToSlider($("histTime").value));
@@ -415,7 +511,3 @@ $("stopBtn").addEventListener("click", stopReplay);
 loadConfig()
   .then(loadRankings)
   .catch(showError);
-
-state.timer = setInterval(() => {
-  if (state.mode === "live" && !state.livePinned) loadRankings().catch(showError);
-}, 60_000);

@@ -31,15 +31,31 @@ type Result struct {
 	ZScore30m        float64    `json:"z_score_30m"`
 	RangePositionPct float64    `json:"range_position_pct"`
 	DollarVolume     float64    `json:"dollar_volume"`
+	SessionVolume    float64    `json:"session_volume"`
 	ATR14            float64    `json:"atr_14"`
 	ATRPercent       float64    `json:"atr_percent"`
 	DayMoveATR       float64    `json:"day_move_atr"`
 	VWAPStretchATR   float64    `json:"vwap_stretch_atr"`
+	Pivots           Pivots     `json:"pivots"`
 	LastUpdated      time.Time  `json:"last_updated"`
 	Reason           string     `json:"reason"`
 	Components       Components `json:"components"`
 	ChartURL         string     `json:"chart_url"`
 	MiniChart        MiniChart  `json:"mini_chart"`
+}
+
+type Pivots struct {
+	PP                float64 `json:"pp"`
+	R1                float64 `json:"r1"`
+	R2                float64 `json:"r2"`
+	R3                float64 `json:"r3"`
+	S1                float64 `json:"s1"`
+	S2                float64 `json:"s2"`
+	S3                float64 `json:"s3"`
+	Nearest           string  `json:"nearest"`
+	DistancePct       float64 `json:"distance_pct"`
+	DistanceATR       float64 `json:"distance_atr"`
+	DirectionalSignal float64 `json:"directional_signal"`
 }
 
 type MiniChart struct {
@@ -57,6 +73,7 @@ type ChartPoint struct {
 
 type Components struct {
 	VWAPExtreme        float64 `json:"vwap_extreme"`
+	PivotExtension     float64 `json:"pivot_extension"`
 	StatisticalMove    float64 `json:"statistical_move"`
 	DailyATRMove       float64 `json:"daily_atr_move"`
 	RangeExtension     float64 `json:"range_extension"`
@@ -65,10 +82,10 @@ type Components struct {
 	TrendPenalty       float64 `json:"trend_penalty"`
 }
 
-func Rank(all map[string][]bars.Bar, daily map[string][]bars.Bar, cfg Config, asOf time.Time) []Result {
+func Rank(all map[string][]bars.Bar, daily map[string][]bars.Bar, priorRegular map[string][]bars.Bar, cfg Config, asOf time.Time) []Result {
 	results := make([]Result, 0, len(all))
 	for symbol, series := range all {
-		result := Score(symbol, series, daily[symbol], cfg, asOf)
+		result := Score(symbol, series, daily[symbol], priorRegular[symbol], cfg, asOf)
 		results = append(results, result)
 	}
 	sort.Slice(results, func(i, j int) bool {
@@ -83,7 +100,7 @@ func Rank(all map[string][]bars.Bar, daily map[string][]bars.Bar, cfg Config, as
 	return results
 }
 
-func Score(symbol string, series, daily []bars.Bar, cfg Config, asOf time.Time) Result {
+func Score(symbol string, series, daily, priorRegular []bars.Bar, cfg Config, asOf time.Time) Result {
 	series = through(series, asOf)
 	if len(series) == 0 {
 		return Result{Symbol: symbol, Side: "No data", Grade: "N/A", Reason: "No minute candles available at this time"}
@@ -92,9 +109,9 @@ func Score(symbol string, series, daily []bars.Bar, cfg Config, asOf time.Time) 
 
 	last := series[len(series)-1]
 	vwap := sessionVWAP(series)
-	dollarVolume := sessionDollarVolume(series)
-	lookback := clamp(cfg.LookbackMinutes, 5, len(series)-1)
-	rangeLookback := clamp(cfg.RangeLookbackMinutes, 5, len(series))
+	dollarVolume, sessionVolume := sessionDollarVolume(series)
+	lookback := clamp(cfg.LookbackMinutes, 1, len(series)-1)
+	rangeLookback := clamp(cfg.RangeLookbackMinutes, 1, len(series))
 	ret30 := pctChange(series[len(series)-1-lookback].Close, last.Close)
 	minuteReturns := returns(series)
 	retVol := stddev(tail(minuteReturns, max(lookback, 10))) * math.Sqrt(float64(max(lookback, 1)))
@@ -108,16 +125,19 @@ func Score(symbol string, series, daily []bars.Bar, cfg Config, asOf time.Time) 
 	vwapStretchATR := ratio(last.Close-vwap, atr)
 	atrPct := pctChange(priorClose, priorClose+atr)
 	rangePos := rangePosition(tailBars(series, rangeLookback), last.Close)
-	side, direction := sideFromStretch(vwapPct, z30, dayMoveATR)
+	pivots := pivotLevels(priorRegular, last.Close, atr)
+	side, direction := sideFromStretch(pivots.DirectionalSignal, vwapPct, z30, dayMoveATR, rangePos)
 
-	vwapExtreme := 25 * cappedAbs(abs(vwapPct)/0.035)
-	statMove := 20 * cappedAbs(abs(z30)/2.5)
-	dailyATRMove := 20 * cappedAbs(abs(dayMoveATR)/1.5)
-	rangeExtension := 12 * rangeExtensionComponent(rangePos, direction)
-	volConfirm := 13 * cappedAbs(dollarVolume/math.Max(cfg.MinDollarVolume, 1))
-	reversal := 10 * reversalEvidence(series, direction)
-	trendPenalty := 15 * trendPersistencePenalty(tail(minuteReturns, 6), direction)
-	score := clampFloat(vwapExtreme+statMove+dailyATRMove+rangeExtension+volConfirm+reversal-trendPenalty, 0, 100)
+	vwapExtreme := 20 * cappedAbs(abs(vwapPct)/0.035)
+	pivotExtension := 22 * cappedAbs(abs(pivots.DirectionalSignal))
+	statMove := 16 * cappedAbs(abs(z30)/2.5)
+	dailyATRMove := 16 * cappedAbs(abs(dayMoveATR)/1.5)
+	rangeExtension := 10 * rangeExtensionComponent(rangePos, direction)
+	volConfirm := 8 * cappedAbs(dollarVolume/math.Max(cfg.MinDollarVolume, 1))
+	reversal := 8 * reversalEvidence(series, direction)
+	trendPenalty := 12 * trendPersistencePenalty(tail(minuteReturns, 6), direction)
+	agreement := setupAgreement(direction, pivots.DirectionalSignal, vwapPct, z30, dayMoveATR)
+	score := clampFloat((vwapExtreme+pivotExtension+statMove+dailyATRMove+rangeExtension+volConfirm+reversal)*agreement-trendPenalty, 0, 100)
 
 	result := Result{
 		Symbol:           symbol,
@@ -131,13 +151,16 @@ func Score(symbol string, series, daily []bars.Bar, cfg Config, asOf time.Time) 
 		ZScore30m:        round(z30, 2),
 		RangePositionPct: round(rangePos*100, 1),
 		DollarVolume:     round(dollarVolume, 0),
+		SessionVolume:    round(sessionVolume, 0),
 		ATR14:            round(atr, 4),
 		ATRPercent:       round(atrPct*100, 2),
 		DayMoveATR:       round(dayMoveATR, 2),
 		VWAPStretchATR:   round(vwapStretchATR, 2),
+		Pivots:           roundPivots(pivots),
 		LastUpdated:      last.End,
 		Components: Components{
 			VWAPExtreme:        round(vwapExtreme, 1),
+			PivotExtension:     round(pivotExtension, 1),
 			StatisticalMove:    round(statMove, 1),
 			DailyATRMove:       round(dailyATRMove, 1),
 			RangeExtension:     round(rangeExtension, 1),
@@ -179,12 +202,13 @@ func sessionVWAP(series []bars.Bar) float64 {
 	return pv / vol
 }
 
-func sessionDollarVolume(series []bars.Bar) float64 {
-	var total float64
+func sessionDollarVolume(series []bars.Bar) (float64, float64) {
+	var dollars, volume float64
 	for _, bar := range series {
-		total += bar.Close * bar.Volume
+		dollars += bar.Close * bar.Volume
+		volume += bar.Volume
 	}
-	return total
+	return dollars, volume
 }
 
 func returns(series []bars.Bar) []float64 {
@@ -214,25 +238,174 @@ func rangePosition(series []bars.Bar, price float64) float64 {
 	return clampFloat((price-low)/(high-low), 0, 1)
 }
 
-func sideFromStretch(vwapPct, z30, dayMoveATR float64) (string, float64) {
-	stretches := []float64{
+func sideFromStretch(pivotSignal, vwapPct, z30, dayMoveATR, rangePos float64) (string, float64) {
+	stretch := pivotSignal*1.35 +
+		ratio(vwapPct, 0.035)*0.95 +
+		ratio(z30, 2.5)*0.80 +
+		ratio(dayMoveATR, 1.5)*0.85 +
+		(rangePos-0.50)*0.70
+	switch {
+	case stretch < -0.12:
+		return "Long bounce", -1
+	case stretch > 0.12:
+		return "Short fade", 1
+	default:
+		return "Neutral", 0
+	}
+}
+
+func pivotLevels(priorRegular []bars.Bar, price, atr float64) Pivots {
+	if len(priorRegular) == 0 {
+		return Pivots{}
+	}
+	sort.Slice(priorRegular, func(i, j int) bool { return priorRegular[i].End.Before(priorRegular[j].End) })
+	high := math.Inf(-1)
+	low := math.Inf(1)
+	close := 0.0
+	for _, bar := range priorRegular {
+		if bar.High > 0 {
+			high = math.Max(high, bar.High)
+		}
+		if bar.Low > 0 {
+			low = math.Min(low, bar.Low)
+		}
+		if bar.Close > 0 {
+			close = bar.Close
+		}
+	}
+	if close <= 0 || !isFinitePrice(high) || !isFinitePrice(low) || high <= low {
+		return Pivots{}
+	}
+
+	pp := (high + low + close) / 3
+	r1 := 2*pp - low
+	s1 := 2*pp - high
+	r2 := pp + (high - low)
+	s2 := pp - (high - low)
+	r3 := high + 2*(pp-low)
+	s3 := low - 2*(high-pp)
+	p := Pivots{PP: pp, R1: r1, R2: r2, R3: r3, S1: s1, S2: s2, S3: s3}
+	p.Nearest, p.DistancePct, p.DistanceATR = nearestPivot(p, price, atr)
+	p.DirectionalSignal = pivotDirectionalSignal(p, price, atr)
+	return p
+}
+
+func pivotDirectionalSignal(p Pivots, price, atr float64) float64 {
+	if p.PP <= 0 || price <= 0 {
+		return 0
+	}
+	width := pivotWidth(p)
+	if atr > 0 {
+		width = math.Max(width, atr*0.45)
+	}
+	if width <= 0 {
+		width = math.Max(p.PP*0.005, 0.01)
+	}
+
+	var signal float64
+	switch {
+	case price >= p.R3:
+		signal = 1.30 + cappedAbs((price-p.R3)/width)*0.20
+	case price >= p.R2:
+		signal = 0.95 + cappedAbs((price-p.R2)/math.Max(p.R3-p.R2, width))*0.25
+	case price >= p.R1:
+		signal = 0.58 + cappedAbs((price-p.R1)/math.Max(p.R2-p.R1, width))*0.25
+	case price >= p.PP:
+		signal = cappedAbs((price-p.PP)/math.Max(p.R1-p.PP, width)) * 0.30
+	case price <= p.S3:
+		signal = -1.30 - cappedAbs((p.S3-price)/width)*0.20
+	case price <= p.S2:
+		signal = -0.95 - cappedAbs((p.S2-price)/math.Max(p.S2-p.S3, width))*0.25
+	case price <= p.S1:
+		signal = -0.58 - cappedAbs((p.S1-price)/math.Max(p.S1-p.S2, width))*0.25
+	default:
+		signal = -cappedAbs((p.PP-price)/math.Max(p.PP-p.S1, width)) * 0.30
+	}
+	return clampFloat(signal, -1.5, 1.5)
+}
+
+func nearestPivot(p Pivots, price, atr float64) (string, float64, float64) {
+	levels := []struct {
+		name  string
+		value float64
+	}{
+		{"R3", p.R3},
+		{"R2", p.R2},
+		{"R1", p.R1},
+		{"PP", p.PP},
+		{"S1", p.S1},
+		{"S2", p.S2},
+		{"S3", p.S3},
+	}
+	name := ""
+	dist := math.Inf(1)
+	for _, level := range levels {
+		if level.value <= 0 {
+			continue
+		}
+		candidate := math.Abs(price - level.value)
+		if candidate < dist {
+			name = level.name
+			dist = candidate
+		}
+	}
+	if name == "" || !isFinitePrice(dist) {
+		return "", 0, 0
+	}
+	return name, ratio(dist, price) * 100, ratio(dist, atr)
+}
+
+func pivotWidth(p Pivots) float64 {
+	levels := []float64{p.S3, p.S2, p.S1, p.PP, p.R1, p.R2, p.R3}
+	var sum float64
+	var count int
+	for i := 1; i < len(levels); i++ {
+		if levels[i] > levels[i-1] {
+			sum += levels[i] - levels[i-1]
+			count++
+		}
+	}
+	if count == 0 {
+		return 0
+	}
+	return sum / float64(count)
+}
+
+func setupAgreement(direction, pivotSignal, vwapPct, z30, dayMoveATR float64) float64 {
+	if direction == 0 {
+		return 0.25
+	}
+	inputs := []float64{
+		pivotSignal,
 		ratio(vwapPct, 0.035),
 		ratio(z30, 2.5),
 		ratio(dayMoveATR, 1.5),
 	}
-	stretch := stretches[0]
-	for _, candidate := range stretches[1:] {
-		if math.Abs(candidate) > math.Abs(stretch) {
-			stretch = candidate
+	var agree, oppose int
+	for _, input := range inputs {
+		switch {
+		case direction > 0 && input > 0.15, direction < 0 && input < -0.15:
+			agree++
+		case direction > 0 && input < -0.15, direction < 0 && input > 0.15:
+			oppose++
 		}
 	}
-	switch {
-	case stretch < 0:
-		return "Long bounce", -1
-	case stretch > 0:
-		return "Short fade", 1
-	default:
-		return "Neutral", 0
+	return clampFloat(0.82+float64(agree)*0.06-float64(oppose)*0.09, 0.62, 1.08)
+}
+
+func roundPivots(p Pivots) Pivots {
+	return Pivots{
+		PP:                round(p.PP, 4),
+		R1:                round(p.R1, 4),
+		R2:                round(p.R2, 4),
+		R3:                round(p.R3, 4),
+		S1:                round(p.S1, 4),
+		S2:                round(p.S2, 4),
+		S3:                round(p.S3, 4),
+		Nearest:           p.Nearest,
+		DistancePct:       round(p.DistancePct, 2),
+		DistanceATR:       round(p.DistanceATR, 2),
+		DirectionalSignal: round(p.DirectionalSignal, 2),
 	}
 }
 
@@ -281,7 +454,12 @@ func reason(r Result) string {
 	if r.ATR14 > 0 {
 		atrPart = fmtFloat(r.DayMoveATR) + " ATR day move"
 	}
+	pivotPart := "pivot n/a"
+	if r.Pivots.Nearest != "" {
+		pivotPart = r.Pivots.Nearest + " nearest pivot"
+	}
 	return fmtPercent(r.MoveFromVWAPPct) + " from VWAP, " +
+		pivotPart + ", " +
 		fmtFloat(r.ZScore30m) + "z 30m move, " +
 		atrPart + ", " +
 		fmtPercent(r.RangePositionPct) + " of 60m range"
@@ -359,6 +537,9 @@ func tailBars(values []bars.Bar, n int) []bars.Bar {
 }
 
 func clamp(v, minV, maxV int) int {
+	if maxV < minV {
+		return maxV
+	}
 	if v < minV {
 		return minV
 	}
@@ -378,6 +559,10 @@ func cappedAbs(v float64) float64 {
 
 func abs(v float64) float64 {
 	return math.Abs(v)
+}
+
+func isFinitePrice(v float64) bool {
+	return !math.IsNaN(v) && !math.IsInf(v, 0)
 }
 
 func max(a, b int) int {

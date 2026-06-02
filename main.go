@@ -129,12 +129,15 @@ func main() {
 func (a *App) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
+		noStore(w)
 		http.ServeFile(w, r, filepath.Join("web", "index.html"))
 	})
 	mux.HandleFunc("GET /app.js", func(w http.ResponseWriter, r *http.Request) {
+		noStore(w)
 		http.ServeFile(w, r, filepath.Join("web", "app.js"))
 	})
 	mux.HandleFunc("GET /styles.css", func(w http.ResponseWriter, r *http.Request) {
+		noStore(w)
 		http.ServeFile(w, r, filepath.Join("web", "styles.css"))
 	})
 	mux.HandleFunc("GET /api/health", a.handleHealth)
@@ -184,7 +187,9 @@ func (a *App) refreshForRange(ctx context.Context, mode string, from, to time.Ti
 	all, errs := a.fetchBars(ctx, from, to)
 	daily, dailyErrs := a.fetchDailyBars(ctx, to)
 	errs = append(errs, dailyErrs...)
-	rankings := scoring.Rank(all, daily, scoringConfig(a.cfg), to)
+	priorRegular, pivotErrs := a.fetchPriorRegularBars(ctx, to)
+	errs = append(errs, pivotErrs...)
+	rankings := scoring.Rank(all, daily, priorRegular, scoringConfig(a.cfg), to)
 	a.addChartURLs(rankings, to)
 	a.addMiniCharts(rankings, all, daily, to)
 	status := "ready"
@@ -321,10 +326,26 @@ func (a *App) fetchDailyBars(ctx context.Context, asOf time.Time) (map[string][]
 	return all, errs
 }
 
+func (a *App) fetchPriorRegularBars(ctx context.Context, asOf time.Time) (map[string][]bars.Bar, []string) {
+	day := priorSessionDay(asOf, a.tz)
+	from := combineDayTime(day, "09:30", a.tz)
+	to := combineDayTime(day, "16:00", a.tz)
+	all, errs := a.fetchBars(ctx, from, to)
+	for symbol, series := range all {
+		all[symbol] = regularSessionBars(series, from, to, a.tz)
+	}
+	return all, errs
+}
+
 func priorSessionDay(asOf time.Time, tz *time.Location) time.Time {
 	local := asOf.In(tz)
 	day := time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, tz)
-	return day.AddDate(0, 0, -1)
+	for {
+		day = day.AddDate(0, 0, -1)
+		if day.Weekday() != time.Saturday && day.Weekday() != time.Sunday {
+			return day
+		}
+	}
 }
 
 type symbolBars struct {
@@ -378,7 +399,9 @@ func (a *App) refreshHistorical(ctx context.Context, from, end, asOf time.Time) 
 	all, errs := a.fetchBars(ctx, from, end)
 	daily, dailyErrs := a.fetchDailyBars(ctx, asOf)
 	errs = append(errs, dailyErrs...)
-	rankings := scoring.Rank(all, daily, scoringConfig(a.cfg), asOf)
+	priorRegular, pivotErrs := a.fetchPriorRegularBars(ctx, asOf)
+	errs = append(errs, pivotErrs...)
+	rankings := scoring.Rank(all, daily, priorRegular, scoringConfig(a.cfg), asOf)
 	a.addChartURLs(rankings, asOf)
 	a.addMiniCharts(rankings, all, daily, asOf)
 	status := "ready"
@@ -467,8 +490,9 @@ func scoringConfig(cfg config.Config) scoring.Config {
 
 func formula() Formula {
 	return Formula{
-		Summary: "Score = VWAP extension (25) + 30m statistical move (20) + daily ATR move (20) + 60m range extension (12) + liquidity (13) + reversal evidence (10) - trend persistence penalty (15).",
+		Summary: "Score = pivot extension (22) + VWAP extension (20) + 30m statistical move (16) + daily ATR move (16) + 60m range extension (10) + liquidity (8) + reversal evidence (8), adjusted for signal agreement, minus trend persistence penalty (12). Pivots use the prior 09:30-16:00 regular session.",
 		Components: map[string]string{
+			"Pivot extension":      "R3/R2/R1 favor short fades, S1/S2/S3 favor long bounces, and PP is treated as the neutral magnet.",
 			"VWAP extension":       "How far price is stretched from session VWAP. Bigger stretch means stronger mean-reversion setup.",
 			"30m statistical move": "The latest 30 minute return divided by recent minute-return volatility. Around +/-2.5z is extreme.",
 			"Daily ATR move":       "Today price move from prior close divided by 14-day ATR. Around +/-1.5 ATR is very stretched.",
@@ -511,8 +535,8 @@ func (a *App) miniChart(symbol string, series, daily []bars.Bar, asOf time.Time)
 	sort.Slice(series, func(i, j int) bool { return series[i].End.Before(series[j].End) })
 	var pv, vol float64
 	for _, bar := range series {
-		localEnd := bar.End.In(a.tz)
-		if localEnd.Before(start) || localEnd.After(end) || localEnd.After(asOf.In(a.tz)) {
+		localStart := bar.Start.In(a.tz)
+		if localStart.Before(start) || !localStart.Before(end) || bar.End.After(asOf) {
 			continue
 		}
 		price := bar.VWAP
@@ -532,6 +556,18 @@ func (a *App) miniChart(symbol string, series, daily []bars.Bar, asOf time.Time)
 		})
 	}
 	return chart
+}
+
+func regularSessionBars(series []bars.Bar, start, end time.Time, tz *time.Location) []bars.Bar {
+	out := make([]bars.Bar, 0, len(series))
+	for _, bar := range series {
+		localStart := bar.Start.In(tz)
+		if localStart.Before(start) || !localStart.Before(end) {
+			continue
+		}
+		out = append(out, bar)
+	}
+	return out
 }
 
 func priorClose(daily []bars.Bar) float64 {
@@ -596,8 +632,13 @@ func newLogger(level string) *slog.Logger {
 
 func writeJSON(w http.ResponseWriter, status int, payload any) {
 	w.Header().Set("Content-Type", "application/json")
+	noStore(w)
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(payload)
+}
+
+func noStore(w http.ResponseWriter) {
+	w.Header().Set("Cache-Control", "no-store")
 }
 
 func max(a, b int) int {

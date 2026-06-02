@@ -43,6 +43,10 @@
         <button id="forward1Btn" type="button">Forward 1</button>
         <button id="latestBtn" type="button">Live/Latest</button>
       </div>
+      <label class="order-toggle">
+        <input id="invertOrderToggle" type="checkbox">
+        <span>Fades top</span>
+      </label>
       <button id="refreshBtn" type="button">Refresh</button>
     </section>
 
@@ -66,29 +70,7 @@
       <div id="formulaGrid" class="formula-grid"></div>
     </section>
 
-    <section class="table-shell">
-      <table>
-        <thead>
-          <tr>
-            <th>Rank</th>
-            <th>Symbol</th>
-            <th>Side</th>
-            <th>Score</th>
-            <th>Price</th>
-            <th>VWAP</th>
-            <th>VWAP %</th>
-            <th>Day ATR</th>
-            <th>VWAP ATR</th>
-            <th>ATR %</th>
-            <th>30m %</th>
-            <th>Z</th>
-            <th>Range</th>
-            <th>Dollar Vol</th>
-          </tr>
-        </thead>
-        <tbody id="rankings"></tbody>
-      </table>
-    </section>
+    <section id="rankings" class="candidate-grid" aria-label="Ranked mean reversion candidates"></section>
   </main>
 
   <script src="/app.js"></script>
