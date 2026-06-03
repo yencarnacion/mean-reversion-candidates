@@ -238,6 +238,7 @@ func (a *App) fetchBars(ctx context.Context, from, to time.Time) (map[string][]b
 			defer wg.Done()
 			select {
 			case <-ctx.Done():
+				results <- symbolBars{symbol: symbol, err: ctx.Err()}
 				return
 			case sem <- struct{}{}:
 			}
@@ -296,6 +297,7 @@ func (a *App) fetchDailyBars(ctx context.Context, asOf time.Time) (map[string][]
 			defer wg.Done()
 			select {
 			case <-ctx.Done():
+				results <- symbolBars{symbol: symbol, err: ctx.Err()}
 				return
 			case sem <- struct{}{}:
 			}
