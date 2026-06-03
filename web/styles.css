@@ -270,6 +270,75 @@ input[type="range"] {
   line-height: 1.35;
 }
 
+.side-counts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(130px, 1fr));
+  gap: 10px;
+}
+
+.side-count {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  min-height: 48px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-left: 4px solid #778491;
+  border-radius: 8px;
+  background: var(--panel);
+  font-variant-numeric: tabular-nums;
+}
+
+.side-count-long {
+  border-left-color: var(--good);
+}
+
+.side-count-short {
+  border-left-color: var(--accent-2);
+}
+
+.side-count span {
+  min-width: 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.side-count strong {
+  color: var(--text);
+  font-size: 20px;
+  line-height: 1;
+}
+
+.side-count em {
+  min-width: 38px;
+  border-radius: 4px;
+  padding: 3px 7px;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 850;
+  line-height: 1.2;
+  text-align: center;
+}
+
+.delta-up {
+  background: var(--gain-bg);
+  color: var(--good);
+}
+
+.delta-down {
+  background: var(--loss-bg);
+  color: var(--danger);
+}
+
+.delta-flat {
+  background: var(--flat-bg);
+  color: var(--muted);
+}
+
 .market-pins {
   display: grid;
   grid-template-columns: repeat(2, minmax(330px, 1fr));
@@ -711,6 +780,7 @@ a:hover {
   .controls,
   .historical,
   .formula-grid,
+  .side-counts,
   .market-pins {
     grid-template-columns: 1fr;
   }

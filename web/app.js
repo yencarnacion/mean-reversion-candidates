@@ -9,11 +9,18 @@ const state = {
   liveCursor: null,
   lastLiveAsOf: null,
   lastRows: [],
+  sideCounts: null,
+  sideCountDeltas: { long: 0, neutral: 0, short: 0 },
   fadesFirst: false,
 };
 
 const $ = (id) => document.getElementById(id);
 const pinnedMarketSymbols = ["SPY", "QQQ"];
+const sideCountGroups = [
+  { key: "long", label: "Long", side: "Long bounce" },
+  { key: "neutral", label: "Neutral", side: "Neutral" },
+  { key: "short", label: "Short", side: "Short fade" },
+];
 
 function fmtDateTime(value) {
   if (!value) return "-";
@@ -154,6 +161,7 @@ function renderSnapshot(data) {
   updateLiveControls();
   if (data.formula) renderFormula(data.formula);
   state.lastRows = data.rankings || [];
+  updateSideCounts(state.lastRows.filter((row) => !isPinnedMarket(row)));
   renderRows(state.lastRows);
 }
 
@@ -171,8 +179,46 @@ function renderRows(rows) {
     .map((row) => ({ ...row, display_rank: row.rank }));
   const gridRows = rows.filter((row) => !isPinnedMarket(row));
 
+  renderSideCounts();
   renderMarketPins(pinnedRows);
   renderGroupedRows(gridRows);
+}
+
+function updateSideCounts(rows) {
+  const next = countSides(rows);
+  if (state.sideCounts) {
+    state.sideCountDeltas = Object.fromEntries(
+      sideCountGroups.map((group) => [group.key, next[group.key] - state.sideCounts[group.key]])
+    );
+  } else {
+    state.sideCountDeltas = { long: 0, neutral: 0, short: 0 };
+  }
+  state.sideCounts = next;
+}
+
+function countSides(rows) {
+  return Object.fromEntries(
+    sideCountGroups.map((group) => [
+      group.key,
+      rows.filter((row) => row.side === group.side).length,
+    ])
+  );
+}
+
+function renderSideCounts() {
+  const counts = state.sideCounts || { long: 0, neutral: 0, short: 0 };
+  $("sideCounts").innerHTML = sideCountGroups.map((group) => {
+    const count = counts[group.key] || 0;
+    const delta = state.sideCountDeltas[group.key] || 0;
+    const deltaClass = delta > 0 ? "delta-up" : delta < 0 ? "delta-down" : "delta-flat";
+    const deltaLabel = delta > 0 ? `+${delta}` : String(delta);
+    return `
+      <div class="side-count side-count-${group.key}">
+        <span>${group.label}</span>
+        <strong>${count}</strong>
+        <em class="${deltaClass}">${deltaLabel}</em>
+      </div>`;
+  }).join("");
 }
 
 function renderMarketPins(rows) {
