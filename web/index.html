@@ -64,13 +64,19 @@
       <button id="stopBtn" type="button">Stop</button>
     </section>
 
-    <section class="formula">
-      <h2>Ranking Formula</h2>
-      <p id="formulaSummary"></p>
-      <div id="formulaGrid" class="formula-grid"></div>
-    </section>
+    <details class="formula">
+      <summary>
+        <span class="formula-title">Ranking Formula</span>
+      </summary>
+      <div class="formula-body">
+        <p id="formulaSummary"></p>
+        <div id="formulaGrid" class="formula-grid"></div>
+      </div>
+    </details>
 
-    <section id="rankings" class="candidate-grid" aria-label="Ranked mean reversion candidates"></section>
+    <section id="marketPins" class="market-pins" aria-label="Pinned market benchmarks"></section>
+
+    <section id="rankings" class="candidate-groups" aria-label="Ranked mean reversion candidates"></section>
   </main>
 
   <script src="/app.js"></script>

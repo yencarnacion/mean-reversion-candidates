@@ -26,6 +26,8 @@ import (
 	"github.com/joho/godotenv"
 )
 
+var pinnedMarketSymbols = []string{"SPY", "QQQ"}
+
 type App struct {
 	log     *slog.Logger
 	cfg     config.Config
@@ -77,6 +79,7 @@ func main() {
 	if len(symbols) == 0 {
 		panic("input csv did not contain any symbols")
 	}
+	symbols = withPinnedMarketSymbols(symbols)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
@@ -486,6 +489,30 @@ func scoringConfig(cfg config.Config) scoring.Config {
 		ExcellentScore:       cfg.Scoring.ExcellentScore,
 		GoodScore:            cfg.Scoring.GoodScore,
 	}
+}
+
+func withPinnedMarketSymbols(symbols []string) []string {
+	seen := make(map[string]struct{}, len(symbols)+len(pinnedMarketSymbols))
+	out := make([]string, 0, len(symbols)+len(pinnedMarketSymbols))
+	for _, symbol := range symbols {
+		symbol = strings.ToUpper(strings.TrimSpace(symbol))
+		if symbol == "" {
+			continue
+		}
+		if _, ok := seen[symbol]; ok {
+			continue
+		}
+		seen[symbol] = struct{}{}
+		out = append(out, symbol)
+	}
+	for _, symbol := range pinnedMarketSymbols {
+		if _, ok := seen[symbol]; ok {
+			continue
+		}
+		seen[symbol] = struct{}{}
+		out = append(out, symbol)
+	}
+	return out
 }
 
 func formula() Formula {

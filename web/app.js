@@ -13,6 +13,7 @@ const state = {
 };
 
 const $ = (id) => document.getElementById(id);
+const pinnedMarketSymbols = ["SPY", "QQQ"];
 
 function fmtDateTime(value) {
   if (!value) return "-";
@@ -164,67 +165,116 @@ function dataClockModeLabel(apiMode) {
 }
 
 function renderRows(rows) {
-  $("rankings").innerHTML = orderedRows(rows).map((r) => {
-    const gradeClass = (r.grade || "").toLowerCase();
-    const sideClass = r.side === "Long bounce" ? "side-long" : r.side === "Short fade" ? "side-short" : "";
-    const cardSideClass = r.side === "Long bounce" ? "card-long" : r.side === "Short fade" ? "card-short" : "";
+  const pinnedRows = pinnedMarketSymbols
+    .map((symbol) => rows.find((row) => row.symbol === symbol))
+    .filter(Boolean)
+    .map((row) => ({ ...row, display_rank: row.rank }));
+  const gridRows = rows.filter((row) => !isPinnedMarket(row));
+
+  renderMarketPins(pinnedRows);
+  renderGroupedRows(gridRows);
+}
+
+function renderMarketPins(rows) {
+  $("marketPins").innerHTML = rows.map((row) => renderCandidateCard(row, "market-pin")).join("");
+}
+
+function renderGroupedRows(rows) {
+  const orderedGroups = state.fadesFirst
+    ? [
+      { title: "Short", side: "Short fade" },
+      { title: "Neutral", side: "Neutral" },
+      { title: "Long", side: "Long bounce" },
+    ]
+    : [
+      { title: "Long", side: "Long bounce" },
+      { title: "Neutral", side: "Neutral" },
+      { title: "Short", side: "Short fade" },
+    ];
+  const ranked = rowsWithSideRanks(rows);
+
+  $("rankings").innerHTML = orderedGroups.map((group) => {
+    const groupRows = ranked
+      .filter((row) => row.side === group.side)
+      .sort(compareCandidateScore);
+    const body = groupRows.length
+      ? groupRows.map((row) => renderCandidateCard(row)).join("")
+      : `<div class="empty-group">No ${group.title.toLowerCase()} candidates</div>`;
     return `
-      <article class="candidate-card ${cardSideClass}">
-        <div class="candidate-top">
-          <div class="candidate-stat rank-stat">
-            <span>Rank</span>
-            <strong>${r.display_rank || "-"}</strong>
-          </div>
-          <div class="candidate-stat symbol-stat">
-            <span>Symbol</span>
-            <strong><a href="${r.chart_url || "#"}" target="_blank" rel="noreferrer">${r.symbol}</a></strong>
-          </div>
-          <div class="candidate-stat side-stat">
-            <span>Side</span>
-            <strong class="${sideClass}">${r.side}</strong>
-          </div>
-          <div class="candidate-stat score-stat">
-            <span>Score</span>
-            <strong><span class="grade ${gradeClass}">${r.grade}</span>${Number(r.score || 0).toFixed(1)}</strong>
-          </div>
-          <div class="candidate-stat price-stat">
-            <span>Price</span>
-            <strong>${renderPrice(r)}</strong>
-          </div>
-          <div class="candidate-stat volume-stat">
-            <span>Dollar / Volume</span>
-            <strong>${fmtMoney(r.dollar_volume || 0)} <em>${fmtVolume(r.session_volume || 0)}</em></strong>
-          </div>
+      <section class="candidate-section" aria-label="${group.title} candidates">
+        <div class="candidate-section-header">
+          <h2>${group.title}</h2>
+          <span>${groupRows.length}</span>
         </div>
-        <div class="chart-wrap" tabindex="0" aria-label="${r.symbol} diagnostics">
-          ${renderMiniChart(r)}
-          ${renderMetricPopover(r)}
-        </div>
-        <div class="candidate-reason">
-          <span>${r.reason || ""}</span>
-          <em>${componentTitle(r.components)}</em>
-        </div>
-      </article>`;
+        <div class="candidate-grid">${body}</div>
+      </section>`;
   }).join("");
 }
 
-function orderedRows(rows) {
-  const ranked = rowsWithSideRanks(rows);
-  const sideBucket = (row) => {
-    if (row.side === "Long bounce") return state.fadesFirst ? 2 : 0;
-    if (row.side === "Short fade") return state.fadesFirst ? 0 : 2;
-    return 1;
-  };
-  return ranked.sort((a, b) => {
-    const sideDiff = sideBucket(a) - sideBucket(b);
-    if (sideDiff !== 0) return sideDiff;
-    return (a.display_rank || 9999) - (b.display_rank || 9999);
-  });
+function renderCandidateCard(r, extraClass = "") {
+  const gradeClass = (r.grade || "").toLowerCase();
+  const sideClass = candidateSideClass(r.side);
+  const cardSideClass = candidateCardSideClass(r.side);
+  return `
+    <article class="candidate-card ${cardSideClass} ${extraClass}">
+      <div class="candidate-top">
+        <div class="candidate-stat rank-stat">
+          <span>Rank</span>
+          <strong>${r.display_rank || "-"}</strong>
+        </div>
+        <div class="candidate-stat symbol-stat">
+          <span>Symbol</span>
+          <strong><a href="${r.chart_url || "#"}" target="_blank" rel="noreferrer">${r.symbol}</a></strong>
+        </div>
+        <div class="candidate-stat side-stat">
+          <span>Side</span>
+          <strong class="${sideClass}">${r.side}</strong>
+        </div>
+        <div class="candidate-stat score-stat">
+          <span>Score</span>
+          <strong><span class="grade ${gradeClass}">${r.grade}</span>${Number(r.score || 0).toFixed(1)}</strong>
+        </div>
+        <div class="candidate-stat price-stat">
+          <span>Price</span>
+          <strong>${renderPrice(r)}</strong>
+        </div>
+        <div class="candidate-stat volume-stat">
+          <span>Dollar / Volume</span>
+          <strong>${fmtMoney(r.dollar_volume || 0)} <em>${fmtVolume(r.session_volume || 0)}</em></strong>
+        </div>
+      </div>
+      <div class="chart-wrap" tabindex="0" aria-label="${r.symbol} diagnostics">
+        ${renderMiniChart(r)}
+        ${renderMetricPopover(r)}
+      </div>
+      <div class="candidate-reason">
+        <span>${r.reason || ""}</span>
+        <em>${componentTitle(r.components)}</em>
+      </div>
+    </article>`;
+}
+
+function candidateSideClass(side) {
+  if (side === "Long bounce") return "side-long";
+  if (side === "Short fade") return "side-short";
+  if (side === "Neutral") return "side-neutral";
+  return "";
+}
+
+function candidateCardSideClass(side) {
+  if (side === "Long bounce") return "card-long";
+  if (side === "Short fade") return "card-short";
+  if (side === "Neutral") return "card-neutral";
+  return "";
+}
+
+function isPinnedMarket(row) {
+  return pinnedMarketSymbols.includes(row.symbol);
 }
 
 function rowsWithSideRanks(rows) {
   const ranked = rows.map((row) => ({ ...row, display_rank: row.rank }));
-  ["Long bounce", "Short fade"].forEach((side) => {
+  ["Long bounce", "Neutral", "Short fade"].forEach((side) => {
     ranked
       .filter((row) => row.side === side)
       .sort(compareCandidateScore)

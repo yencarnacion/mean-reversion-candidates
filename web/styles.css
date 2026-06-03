@@ -206,6 +206,47 @@ input[type="range"] {
   padding: 0;
 }
 
+.formula {
+  display: block;
+}
+
+.formula summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.formula summary::-webkit-details-marker {
+  display: none;
+}
+
+.formula summary::after {
+  content: "";
+  width: 9px;
+  height: 9px;
+  border-bottom: 2px solid var(--muted);
+  border-right: 2px solid var(--muted);
+  transform: rotate(45deg);
+  transition: transform 140ms ease;
+}
+
+.formula[open] summary::after {
+  transform: rotate(225deg);
+}
+
+.formula-title {
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 750;
+}
+
+.formula-body {
+  margin-top: 12px;
+}
+
 .formula-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -227,6 +268,44 @@ input[type="range"] {
   color: var(--muted);
   font-size: 12px;
   line-height: 1.35;
+}
+
+.market-pins {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(330px, 1fr));
+  gap: 14px;
+  align-items: start;
+}
+
+.candidate-groups {
+  display: grid;
+  gap: 22px;
+}
+
+.candidate-section {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.candidate-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 4px;
+  border-top: 1px solid var(--line);
+}
+
+.candidate-section-header h2 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.candidate-section-header span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
 }
 
 .candidate-grid {
@@ -253,6 +332,14 @@ input[type="range"] {
 
 .candidate-card.card-short {
   border-left-color: var(--accent-2);
+}
+
+.candidate-card.card-neutral {
+  border-left-color: #778491;
+}
+
+.candidate-card.market-pin {
+  border-top: 3px solid #344252;
 }
 
 .candidate-card:hover {
@@ -581,6 +668,22 @@ input[type="range"] {
   font-weight: 750;
 }
 
+.side-neutral {
+  color: #536170;
+  font-weight: 750;
+}
+
+.empty-group {
+  min-height: 72px;
+  padding: 18px;
+  border: 1px dashed #cbd5de;
+  border-radius: 8px;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.62);
+  font-size: 13px;
+  font-weight: 650;
+}
+
 .negative {
   color: var(--danger);
 }
@@ -607,7 +710,8 @@ a:hover {
 
   .controls,
   .historical,
-  .formula-grid {
+  .formula-grid,
+  .market-pins {
     grid-template-columns: 1fr;
   }
 
@@ -629,6 +733,10 @@ a:hover {
   }
 
   .candidate-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .market-pins {
     grid-template-columns: minmax(0, 1fr);
   }
 
