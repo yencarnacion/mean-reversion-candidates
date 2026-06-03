@@ -200,7 +200,7 @@ function countSides(rows) {
   return Object.fromEntries(
     sideCountGroups.map((group) => [
       group.key,
-      rows.filter((row) => row.side === group.side).length,
+      rows.filter((row) => sideGroupKey(row) === group.key).length,
     ])
   );
 }
@@ -228,20 +228,20 @@ function renderMarketPins(rows) {
 function renderGroupedRows(rows) {
   const orderedGroups = state.fadesFirst
     ? [
-      { title: "Short", side: "Short fade" },
-      { title: "Neutral", side: "Neutral" },
-      { title: "Long", side: "Long bounce" },
+      { title: "Short", key: "short" },
+      { title: "Neutral", key: "neutral" },
+      { title: "Long", key: "long" },
     ]
     : [
-      { title: "Long", side: "Long bounce" },
-      { title: "Neutral", side: "Neutral" },
-      { title: "Short", side: "Short fade" },
+      { title: "Long", key: "long" },
+      { title: "Neutral", key: "neutral" },
+      { title: "Short", key: "short" },
     ];
   const ranked = rowsWithSideRanks(rows);
 
   $("rankings").innerHTML = orderedGroups.map((group) => {
     const groupRows = ranked
-      .filter((row) => row.side === group.side)
+      .filter((row) => sideGroupKey(row) === group.key)
       .sort(compareCandidateScore);
     const body = groupRows.length
       ? groupRows.map((row) => renderCandidateCard(row)).join("")
@@ -303,26 +303,30 @@ function renderCandidateCard(r, extraClass = "") {
 function candidateSideClass(side) {
   if (side === "Long bounce") return "side-long";
   if (side === "Short fade") return "side-short";
-  if (side === "Neutral") return "side-neutral";
-  return "";
+  return "side-neutral";
 }
 
 function candidateCardSideClass(side) {
   if (side === "Long bounce") return "card-long";
   if (side === "Short fade") return "card-short";
-  if (side === "Neutral") return "card-neutral";
-  return "";
+  return "card-neutral";
 }
 
 function isPinnedMarket(row) {
   return pinnedMarketSymbols.includes(row.symbol);
 }
 
+function sideGroupKey(row) {
+  if (row.side === "Long bounce") return "long";
+  if (row.side === "Short fade") return "short";
+  return "neutral";
+}
+
 function rowsWithSideRanks(rows) {
   const ranked = rows.map((row) => ({ ...row, display_rank: row.rank }));
-  ["Long bounce", "Neutral", "Short fade"].forEach((side) => {
+  ["long", "neutral", "short"].forEach((sideKey) => {
     ranked
-      .filter((row) => row.side === side)
+      .filter((row) => sideGroupKey(row) === sideKey)
       .sort(compareCandidateScore)
       .forEach((row, index) => {
         row.display_rank = index + 1;
