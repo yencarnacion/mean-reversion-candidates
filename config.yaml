@@ -9,6 +9,7 @@ massive:
 live:
   enabled: true
   refresh_seconds: 60
+  refresh_delay_seconds: 3
   start_time: "04:00"
   end_time: "20:00"
 

@@ -100,10 +100,22 @@ button.active,
 }
 
 .controls {
-  display: grid;
-  grid-template-columns: minmax(240px, 1.4fr) repeat(3, minmax(120px, 1fr)) auto auto auto;
+  display: flex;
+  flex-wrap: wrap;
   gap: 12px;
   align-items: center;
+}
+
+.data-clock {
+  flex: 1 1 240px;
+}
+
+.metric {
+  flex: 1 1 120px;
+}
+
+.live-playback {
+  flex: 1 1 auto;
 }
 
 .live-playback {

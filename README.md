@@ -24,6 +24,10 @@ http://localhost:8089
 
 The port, CSV path, live window, replay window, scoring thresholds, and chart opener base URL are configurable in `config.yaml`. Stock links default to the separate chart opener at `http://localhost:8081`.
 
+## Live Data Timing
+
+Live refreshes are aligned to the provider's minute boundary. By default the app fetches 3 seconds after the top of each minute (`live.refresh_delay_seconds: 3`) and scores the latest completed minute, so a 10:31:03 refresh produces a 10:31 data snapshot.
+
 ## Scoring
 
 Every CSV symbol is always ranked. The score is:

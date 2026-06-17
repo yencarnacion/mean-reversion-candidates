@@ -3,15 +3,19 @@ const state = {
   timer: null,
   loadingRankings: false,
   refreshMs: 60_000,
+  refreshDelayMs: 3_000,
   playing: false,
   playTimer: null,
   livePinned: false,
   liveCursor: null,
   lastLiveAsOf: null,
+  lastSnapshotUpdatedAt: null,
   lastRows: [],
   sideCounts: null,
   sideCountDeltas: { long: 0, neutral: 0, short: 0 },
   fadesFirst: false,
+  soundEnabled: true,
+  audioContext: null,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -95,6 +99,12 @@ async function loadConfig() {
   if (Number.isFinite(seconds) && seconds > 0) {
     state.refreshMs = seconds * 1000;
   }
+  const delaySeconds = Number(data.config?.live?.refresh_delay_seconds);
+  if (Number.isFinite(delaySeconds) && delaySeconds >= 0) {
+    state.refreshDelayMs = delaySeconds * 1000;
+  }
+  state.soundEnabled = localStorage.getItem("updateSoundEnabled") !== "false";
+  $("soundToggle").checked = state.soundEnabled;
 
   const now = new Date();
   $("histDate").value = now.toISOString().slice(0, 10);
@@ -148,6 +158,7 @@ function liveCursorUrl() {
 }
 
 function renderSnapshot(data) {
+  const shouldBeep = shouldPlayUpdateSound(data);
   $("status").textContent = `${data.mode} - ${data.status}`;
   $("symbolCount").textContent = data.symbols;
   $("asOf").textContent = fmtDateTime(data.as_of);
@@ -163,6 +174,16 @@ function renderSnapshot(data) {
   state.lastRows = data.rankings || [];
   updateSideCounts(state.lastRows.filter((row) => !isPinnedMarket(row)));
   renderRows(state.lastRows);
+  if (shouldBeep) playUpdateSound();
+}
+
+function shouldPlayUpdateSound(data) {
+  if (!state.soundEnabled || state.mode !== "live" || state.livePinned || data.mode !== "live" || data.market_open !== true) return false;
+  const updatedAt = data.updated_at ? new Date(data.updated_at).toISOString() : "";
+  if (!updatedAt) return false;
+  const previous = state.lastSnapshotUpdatedAt;
+  state.lastSnapshotUpdatedAt = updatedAt;
+  return Boolean(previous && previous !== updatedAt);
 }
 
 function dataClockModeLabel(apiMode) {
@@ -501,8 +522,17 @@ function scheduleLiveRefresh() {
   state.timer = null;
   if (state.mode !== "live" || state.livePinned) return;
   state.timer = setTimeout(() => {
-    loadRankings().catch(showError);
-  }, state.refreshMs);
+    refreshLive(false).catch(showError);
+  }, nextAlignedRefreshDelay());
+}
+
+function nextAlignedRefreshDelay(now = new Date()) {
+  const interval = Math.max(1_000, state.refreshMs);
+  const targetOffset = Math.max(0, Math.min(state.refreshDelayMs, interval - 250));
+  const nowMs = now.getTime();
+  let target = Math.floor(nowMs / interval) * interval + targetOffset;
+  while (target <= nowMs + 25) target += interval;
+  return Math.max(250, target - nowMs);
 }
 
 function dateTimeParts(date) {
@@ -621,14 +651,67 @@ async function refreshNow() {
       await loadRankings();
       return;
     }
-    const res = await fetch("/api/refresh", { method: "POST", cache: "no-store" });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "refresh failed");
-    renderSnapshot(data);
-    scheduleLiveRefresh();
+    await refreshLive(true);
     return;
   }
   await loadRankings();
+}
+
+async function refreshLive(force) {
+  if (state.loadingRankings) return;
+  state.loadingRankings = true;
+  const url = force ? "/api/refresh?force=1" : "/api/refresh";
+  try {
+    const res = await fetch(url, { method: "POST", cache: "no-store" });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "refresh failed");
+    renderSnapshot(data);
+  } finally {
+    state.loadingRankings = false;
+    scheduleLiveRefresh();
+  }
+}
+
+function primeUpdateSound() {
+  const AudioContext = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContext) return null;
+  if (!state.audioContext) {
+    state.audioContext = new AudioContext();
+  }
+  if (state.audioContext.state === "suspended") {
+    state.audioContext.resume().catch(() => {});
+  }
+  return state.audioContext;
+}
+
+function playUpdateSound() {
+  if (!state.soundEnabled) return;
+  const ctx = primeUpdateSound();
+  if (!ctx) return;
+  ctx.resume().then(() => {
+    const start = ctx.currentTime;
+    const gain = ctx.createGain();
+    const filter = ctx.createBiquadFilter();
+    filter.type = "lowpass";
+    filter.frequency.setValueAtTime(2600, start);
+    gain.gain.setValueAtTime(0.0001, start);
+    gain.gain.exponentialRampToValueAtTime(0.045, start + 0.012);
+    gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.18);
+    filter.connect(gain);
+    gain.connect(ctx.destination);
+
+    [
+      { frequency: 1046.5, offset: 0, duration: 0.075 },
+      { frequency: 1568, offset: 0.055, duration: 0.12 },
+    ].forEach((note) => {
+      const osc = ctx.createOscillator();
+      osc.type = "square";
+      osc.frequency.setValueAtTime(note.frequency, start + note.offset);
+      osc.connect(filter);
+      osc.start(start + note.offset);
+      osc.stop(start + note.offset + note.duration);
+    });
+  }).catch(() => {});
 }
 
 $("liveBtn").addEventListener("click", () => setMode("live"));
@@ -642,6 +725,11 @@ $("invertOrderToggle").addEventListener("change", (event) => {
   state.fadesFirst = event.target.checked;
   renderRows(state.lastRows || []);
 });
+$("soundToggle").addEventListener("change", (event) => {
+  state.soundEnabled = event.target.checked;
+  localStorage.setItem("updateSoundEnabled", String(state.soundEnabled));
+  if (state.soundEnabled) primeUpdateSound();
+});
 $("histDate").addEventListener("change", () => loadRankings().catch(showError));
 $("histTime").addEventListener("change", () => {
   $("timeSlider").value = String(timeToSlider($("histTime").value));
@@ -653,6 +741,8 @@ $("timeSlider").addEventListener("input", () => {
 $("timeSlider").addEventListener("change", () => loadRankings().catch(showError));
 $("playBtn").addEventListener("click", startReplay);
 $("stopBtn").addEventListener("click", stopReplay);
+document.addEventListener("pointerdown", primeUpdateSound, { once: true });
+document.addEventListener("keydown", primeUpdateSound, { once: true });
 
 loadConfig()
   .then(loadRankings)

@@ -35,8 +35,9 @@ type App struct {
 	client  *massive.Client
 	symbols []string
 
-	mu      sync.RWMutex
-	current Snapshot
+	refreshMu sync.Mutex
+	mu        sync.RWMutex
+	current   Snapshot
 }
 
 type Snapshot struct {
@@ -151,39 +152,55 @@ func (a *App) routes() http.Handler {
 }
 
 func (a *App) liveLoop(ctx context.Context) {
-	a.refreshLive(ctx)
-	ticker := time.NewTicker(time.Duration(a.cfg.Live.RefreshSeconds) * time.Second)
-	defer ticker.Stop()
+	a.refreshLive(ctx, false)
 	for {
+		delay := nextLiveRefreshDelay(
+			time.Now().In(a.tz),
+			time.Duration(a.cfg.Live.RefreshSeconds)*time.Second,
+			time.Duration(a.cfg.Live.RefreshDelaySeconds)*time.Second,
+		)
+		timer := time.NewTimer(delay)
 		select {
 		case <-ctx.Done():
+			timer.Stop()
 			return
-		case <-ticker.C:
-			a.refreshLive(ctx)
+		case <-timer.C:
+			a.refreshLive(ctx, false)
 		}
 	}
 }
 
-func (a *App) refreshLive(parent context.Context) {
+func (a *App) refreshLive(parent context.Context, force bool) Snapshot {
+	a.refreshMu.Lock()
+	defer a.refreshMu.Unlock()
+
 	now := time.Now().In(a.tz)
 	from, to, open := a.liveRange(now)
 	if !open {
-		a.setSnapshot(Snapshot{
+		snap := Snapshot{
 			Mode:       "live",
 			Status:     "outside configured live window",
-			AsOf:       now,
-			UpdatedAt:  now,
+			AsOf:       to,
+			UpdatedAt:  time.Now().In(a.tz),
 			Symbols:    len(a.symbols),
 			Rankings:   a.snapshot().Rankings,
 			Formula:    formula(),
 			MarketOpen: false,
-		})
-		return
+		}
+		a.setSnapshot(snap)
+		return snap
+	}
+
+	if !force {
+		snap := a.snapshot()
+		if snap.Mode == "live" && snap.MarketOpen && snap.AsOf.Equal(to) {
+			return snap
+		}
 	}
 
 	ctx, cancel := context.WithTimeout(parent, 90*time.Second)
 	defer cancel()
-	a.refreshForRange(ctx, "live", from, to)
+	return a.refreshForRange(ctx, "live", from, to)
 }
 
 func (a *App) refreshForRange(ctx context.Context, mode string, from, to time.Time) Snapshot {
@@ -434,8 +451,8 @@ func (a *App) handleRefresh(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
 	defer cancel()
-	a.refreshLive(ctx)
-	writeJSON(w, http.StatusOK, a.snapshot())
+	force := r.URL.Query().Get("force") == "1"
+	writeJSON(w, http.StatusOK, a.refreshLive(ctx, force))
 }
 
 func (a *App) parseHistoricalRequest(r *http.Request) (time.Time, time.Time, error) {
@@ -464,13 +481,30 @@ func (a *App) parseHistoricalRequest(r *http.Request) (time.Time, time.Time, err
 }
 
 func (a *App) liveRange(now time.Time) (time.Time, time.Time, bool) {
-	day := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, a.tz)
+	asOf := now.In(a.tz).Truncate(time.Minute)
+	day := time.Date(asOf.Year(), asOf.Month(), asOf.Day(), 0, 0, 0, 0, a.tz)
 	start := combineDayTime(day, a.cfg.Live.StartTime, a.tz)
 	end := combineDayTime(day, a.cfg.Live.EndTime, a.tz)
-	if now.Before(start) || now.After(end) {
-		return start, now, false
+	if asOf.Before(start) || asOf.After(end) {
+		return start, asOf, false
 	}
-	return start, now, true
+	return start, asOf, true
+}
+
+func nextLiveRefreshDelay(now time.Time, interval, delay time.Duration) time.Duration {
+	if interval <= 0 {
+		interval = time.Minute
+	}
+	if delay < 0 {
+		delay = 0
+	}
+	intervalNanos := int64(interval)
+	nowNanos := now.UnixNano()
+	targetNanos := (nowNanos/intervalNanos)*intervalNanos + int64(delay)
+	for targetNanos <= nowNanos {
+		targetNanos += intervalNanos
+	}
+	return time.Duration(targetNanos - nowNanos)
 }
 
 func combineDayTime(day time.Time, clock string, tz *time.Location) time.Time {

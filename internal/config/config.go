@@ -27,10 +27,11 @@ type MassiveConfig struct {
 }
 
 type LiveConfig struct {
-	Enabled        bool   `yaml:"enabled" json:"enabled"`
-	RefreshSeconds int    `yaml:"refresh_seconds" json:"refresh_seconds"`
-	StartTime      string `yaml:"start_time" json:"start_time"`
-	EndTime        string `yaml:"end_time" json:"end_time"`
+	Enabled             bool   `yaml:"enabled" json:"enabled"`
+	RefreshSeconds      int    `yaml:"refresh_seconds" json:"refresh_seconds"`
+	RefreshDelaySeconds int    `yaml:"refresh_delay_seconds" json:"refresh_delay_seconds"`
+	StartTime           string `yaml:"start_time" json:"start_time"`
+	EndTime             string `yaml:"end_time" json:"end_time"`
 }
 
 type HistoricalConfig struct {
@@ -66,10 +67,11 @@ func Default() Config {
 			MaxParallelRequests: 6,
 		},
 		Live: LiveConfig{
-			Enabled:        true,
-			RefreshSeconds: 60,
-			StartTime:      "04:00",
-			EndTime:        "20:00",
+			Enabled:             true,
+			RefreshSeconds:      60,
+			RefreshDelaySeconds: 3,
+			StartTime:           "04:00",
+			EndTime:             "20:00",
 		},
 		Historical: HistoricalConfig{
 			StartTime:         "04:00",
@@ -126,6 +128,9 @@ func (c *Config) Normalize() {
 	if c.Live.RefreshSeconds <= 0 {
 		c.Live.RefreshSeconds = def.Live.RefreshSeconds
 	}
+	if c.Live.RefreshDelaySeconds <= 0 {
+		c.Live.RefreshDelaySeconds = def.Live.RefreshDelaySeconds
+	}
 	if strings.TrimSpace(c.Live.StartTime) == "" {
 		c.Live.StartTime = def.Live.StartTime
 	}
@@ -176,6 +181,9 @@ func (c Config) Validate() error {
 	}
 	if _, err := time.Parse("15:04", c.Live.EndTime); err != nil {
 		return fmt.Errorf("live.end_time: %w", err)
+	}
+	if c.Live.RefreshDelaySeconds >= c.Live.RefreshSeconds {
+		return fmt.Errorf("live.refresh_delay_seconds must be less than live.refresh_seconds")
 	}
 	if _, err := time.Parse("15:04", c.Historical.StartTime); err != nil {
 		return fmt.Errorf("historical.start_time: %w", err)
