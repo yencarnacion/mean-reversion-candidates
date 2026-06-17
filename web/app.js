@@ -261,8 +261,9 @@ function renderCandidateCard(r, extraClass = "") {
   const gradeClass = (r.grade || "").toLowerCase();
   const sideClass = candidateSideClass(r.side);
   const cardSideClass = candidateCardSideClass(r.side);
+  const rangeExtremeClass = rangeDecileExtreme(r)?.cardClass || "";
   return `
-    <article class="candidate-card ${cardSideClass} ${extraClass}">
+    <article class="candidate-card ${cardSideClass} ${rangeExtremeClass} ${extraClass}">
       <div class="candidate-top">
         <div class="candidate-stat rank-stat">
           <span>Rank</span>
@@ -293,11 +294,56 @@ function renderCandidateCard(r, extraClass = "") {
         ${renderMiniChart(r)}
         ${renderMetricPopover(r)}
       </div>
+      ${renderRangeDecileIndicator(r)}
       <div class="candidate-reason">
         <span>${r.reason || ""}</span>
         <em>${componentTitle(r.components)}</em>
       </div>
     </article>`;
+}
+
+function rangeDecileExtreme(row) {
+  const pct = Number(row.range_position_pct);
+  if (!Number.isFinite(pct)) return null;
+  if (pct <= 10) {
+    return {
+      cardClass: "range-lower-decile-card",
+      alertClass: "range-decile-lower",
+      label: "Lower 10% of 60m range",
+      title: "Price is within the lower 10% of the last 60-minute range",
+    };
+  }
+  if (pct >= 90) {
+    return {
+      cardClass: "range-upper-decile-card",
+      alertClass: "range-decile-upper",
+      label: "Upper 10% of 60m range",
+      title: "Price is within the upper 10% of the last 60-minute range",
+    };
+  }
+  return null;
+}
+
+function renderRangeDecileIndicator(row) {
+  const extreme = rangeDecileExtreme(row);
+  if (!extreme) return "";
+  const pct = clampNumber(Number(row.range_position_pct || 0), 0, 100);
+  return `
+    <div class="range-decile-alert ${extreme.alertClass}" title="${extreme.title}">
+      <div class="range-decile-text">
+        <span>${extreme.label}</span>
+        <strong>${pct.toFixed(1)}%</strong>
+      </div>
+      <div class="range-decile-rail" aria-hidden="true">
+        <i class="range-decile-zone"></i>
+        <b style="left: ${pct}%"></b>
+      </div>
+    </div>`;
+}
+
+function clampNumber(value, min, max) {
+  if (!Number.isFinite(value)) return min;
+  return Math.min(max, Math.max(min, value));
 }
 
 function candidateSideClass(side) {

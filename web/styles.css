@@ -411,9 +411,25 @@ input[type="range"] {
   border-top: 3px solid #344252;
 }
 
+.candidate-card.range-lower-decile-card {
+  box-shadow: inset 0 0 0 2px rgba(193, 74, 45, 0.18), 0 1px 2px rgba(20, 29, 38, 0.04);
+}
+
+.candidate-card.range-upper-decile-card {
+  box-shadow: inset 0 0 0 2px rgba(45, 103, 169, 0.18), 0 1px 2px rgba(20, 29, 38, 0.04);
+}
+
 .candidate-card:hover {
   border-color: #b8c4cf;
   box-shadow: 0 5px 18px rgba(20, 29, 38, 0.09);
+}
+
+.candidate-card.range-lower-decile-card:hover {
+  box-shadow: inset 0 0 0 2px rgba(193, 74, 45, 0.18), 0 5px 18px rgba(20, 29, 38, 0.09);
+}
+
+.candidate-card.range-upper-decile-card:hover {
+  box-shadow: inset 0 0 0 2px rgba(45, 103, 169, 0.18), 0 5px 18px rgba(20, 29, 38, 0.09);
 }
 
 .candidate-top {
@@ -530,6 +546,98 @@ input[type="range"] {
 .candidate-reason em {
   color: #7a8794;
   font-style: normal;
+}
+
+.range-decile-alert {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 118px;
+  gap: 10px;
+  align-items: center;
+  margin: 0 12px 9px;
+  padding: 7px 8px;
+  border: 1px solid #efc5b8;
+  border-left: 4px solid #c14a2d;
+  border-radius: 6px;
+  background: #fff4ef;
+}
+
+.range-decile-alert.range-decile-upper {
+  border-color: #bfd2e8;
+  border-left-color: #2d67a9;
+  background: #f1f7ff;
+}
+
+.range-decile-text {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.range-decile-text span {
+  color: #73321f;
+  font-size: 11px;
+  font-weight: 850;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.range-decile-text strong {
+  color: #5f2618;
+  font-size: 13px;
+  line-height: 1.1;
+}
+
+.range-decile-upper .range-decile-text span {
+  color: #214a78;
+}
+
+.range-decile-upper .range-decile-text strong {
+  color: #163a61;
+}
+
+.range-decile-rail {
+  position: relative;
+  height: 14px;
+  border: 1px solid #dbb2a5;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #fff 0 10%, #eef3f7 10% 100%);
+  overflow: hidden;
+}
+
+.range-decile-upper .range-decile-rail {
+  border-color: #a9c0d9;
+  background: linear-gradient(90deg, #eef3f7 0 90%, #fff 90% 100%);
+}
+
+.range-decile-zone {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 10%;
+  background: repeating-linear-gradient(135deg, rgba(193, 74, 45, 0.35) 0 3px, rgba(193, 74, 45, 0.1) 3px 6px);
+}
+
+.range-decile-upper .range-decile-zone {
+  inset: 0 0 0 auto;
+  background: repeating-linear-gradient(135deg, rgba(45, 103, 169, 0.35) 0 3px, rgba(45, 103, 169, 0.1) 3px 6px);
+}
+
+.range-decile-rail b {
+  position: absolute;
+  top: 50%;
+  width: 12px;
+  height: 12px;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  background: #c14a2d;
+  box-shadow: 0 1px 4px rgba(81, 31, 19, 0.3);
+  transform: translate(-50%, -50%);
+}
+
+.range-decile-upper .range-decile-rail b {
+  background: #2d67a9;
+  box-shadow: 0 1px 4px rgba(22, 58, 97, 0.3);
 }
 
 .mini-chart {
